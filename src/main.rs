@@ -18,9 +18,6 @@ use futures_util::{
 };
 use tokio::net::TcpListener;
 
-mod payloads;
-pub mod response;
-
 #[derive(Clone)]
 struct AppState {
     users_list: DashMap<String, String>,
