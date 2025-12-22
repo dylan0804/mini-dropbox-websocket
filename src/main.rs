@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use axum::{
     extract::{
-        ws::{Message, WebSocket},
+        ws::{Message, Utf8Bytes, WebSocket},
         ConnectInfo, Path, State, WebSocketUpgrade,
     },
     response::IntoResponse,
@@ -13,14 +13,25 @@ use axum::{
 use axum_extra::{headers::UserAgent, TypedHeader};
 use dashmap::{DashMap, Map};
 use futures_util::{
+    future::ok,
+    io::Write,
     stream::{SplitSink, SplitStream},
-    StreamExt,
+    SinkExt, StreamExt,
 };
-use tokio::net::TcpListener;
+use iroh::Endpoint;
+use serde_json::json;
+use tokio::{
+    net::TcpListener,
+    sync::mpsc::{self, Receiver, Sender},
+};
+
+use crate::message::WebSocketMessage;
+
+mod message;
 
 #[derive(Clone)]
 struct AppState {
-    users_list: DashMap<String, String>,
+    users_list: DashMap<String, Option<IrohCredentials>>,
 }
 
 impl AppState {
@@ -29,6 +40,11 @@ impl AppState {
             users_list: DashMap::new(),
         }
     }
+}
+
+#[derive(Clone)]
+struct IrohCredentials {
+    endpoint: Endpoint,
 }
 
 #[tokio::main]
@@ -61,24 +77,61 @@ async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, who: SocketAddr) {
-    let (mut sender, mut receiver) = socket.split();
+async fn handle_socket(socket: WebSocket, state: AppState, who: SocketAddr) {
+    let (sender, receiver) = socket.split();
 
-    tokio::spawn(write(sender));
-    tokio::spawn(read(receiver));
-    // if socket
-    //     .send(axum::extract::ws::Message::Ping(Bytes::new()))
-    //     .await
-    //     .is_ok()
-    // {
-    //     state.users_list.insert(key, value)
-    //     println!("Pinged {who}")
-    // } else {
-    //     println!("Could not ping {who}");
-    //     return;
-    // }
+    let (tx, rx) = mpsc::channel::<WebSocketMessage>(100);
+
+    tokio::spawn(write(sender, rx, state.clone()));
+    tokio::spawn(read(receiver, tx, state));
 }
 
-async fn write(sender: SplitSink<WebSocket, Message>) {}
+async fn write(
+    mut sender: SplitSink<WebSocket, Message>,
+    mut rx: Receiver<WebSocketMessage>,
+    state: AppState,
+) {
+    loop {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                WebSocketMessage::RegisterSuccess => {
+                    sender
+                        .send(Message::Text(Utf8Bytes::from(
+                            json!(WebSocketMessage::RegisterSuccess).to_string(),
+                        )))
+                        .await
+                        .ok();
+                }
+                WebSocketMessage::ErrorDeserializingJson(e) => {
+                    sender.send(Message::Text(Utf8Bytes::from(e))).await.ok();
+                }
+                _ => {}
+            }
+        }
+    }
+}
 
-async fn read(receiver: SplitStream<WebSocket>) {}
+async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>, state: AppState) {
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Text(bytes) => {
+                match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
+                    Ok(websocket_msg) => match websocket_msg {
+                        WebSocketMessage::Register { nickname } => {
+                            state.users_list.insert(nickname, None);
+                            tx.send(WebSocketMessage::RegisterSuccess).await.ok();
+                        }
+                        _ => {}
+                    },
+                    Err(e) => {
+                        tx.send(WebSocketMessage::ErrorDeserializingJson(e.to_string()))
+                            .await
+                            .ok();
+                    }
+                }
+                // tell writer
+            }
+            _ => {}
+        }
+    }
+}
