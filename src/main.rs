@@ -99,22 +99,20 @@ async fn write(
     state: AppState,
 ) {
     println!("write called");
-    loop {
-        while let Ok(msg) = rx.try_recv() {
-            match msg {
-                WebSocketMessage::RegisterSuccess => {
-                    sender
-                        .send(Message::Text(Utf8Bytes::from(
-                            json!(WebSocketMessage::RegisterSuccess).to_string(),
-                        )))
-                        .await
-                        .ok();
-                }
-                WebSocketMessage::ErrorDeserializingJson(e) => {
-                    sender.send(Message::Text(Utf8Bytes::from(e))).await.ok();
-                }
-                _ => {}
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            WebSocketMessage::RegisterSuccess => {
+                sender
+                    .send(Message::Text(Utf8Bytes::from(
+                        json!(WebSocketMessage::RegisterSuccess).to_string(),
+                    )))
+                    .await
+                    .ok();
             }
+            WebSocketMessage::ErrorDeserializingJson(e) => {
+                sender.send(Message::Text(Utf8Bytes::from(e))).await.ok();
+            }
+            _ => {}
         }
     }
 }
@@ -122,36 +120,36 @@ async fn write(
 async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>, state: AppState) {
     println!("read called");
 
-    let first = receiver.next().await;
-    println!("got {first:?}");
-    // while let Some(Ok(msg)) = receiver.next().await {
-    //     println!("receiving smth, deserializing it...");
-    //     match msg {
-    //         Message::Text(bytes) => {
-    //             match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
-    //                 Ok(websocket_msg) => match websocket_msg {
-    //                     WebSocketMessage::Register { nickname } => {
-    //                         state.users_list.insert(nickname, None);
-    //                         println!("Users now {:?}", state.users_list);
-    //                         tx.send(WebSocketMessage::RegisterSuccess).await.ok();
-    //                     }
-    //                     WebSocketMessage::DisconnectUser(nickname) => {
-    //                         state.users_list.remove(&nickname);
-    //                         println!("Users now {:?}", state.users_list);
-    //                     }
-    //                     _ => {}
-    //                 },
-    //                 Err(e) => {
-    //                     tx.send(WebSocketMessage::ErrorDeserializingJson(e.to_string()))
-    //                         .await
-    //                         .ok();
-    //                 }
-    //             }
-    //             // tell writer
-    //         }
-    //         _ => {}
-    //     }
-    // }
+    // let first = receiver.next().await;
+    // println!("got {first:?}");
+    while let Some(Ok(msg)) = receiver.next().await {
+        println!("receiving smth, deserializing it...");
+        match msg {
+            Message::Text(bytes) => {
+                match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
+                    Ok(websocket_msg) => match websocket_msg {
+                        WebSocketMessage::Register { nickname } => {
+                            state.users_list.insert(nickname, None);
+                            println!("Users now {:?}", state.users_list);
+                            tx.send(WebSocketMessage::RegisterSuccess).await.ok();
+                        }
+                        WebSocketMessage::DisconnectUser(nickname) => {
+                            state.users_list.remove(&nickname);
+                            println!("Users now {:?}", state.users_list);
+                        }
+                        _ => {}
+                    },
+                    Err(e) => {
+                        tx.send(WebSocketMessage::ErrorDeserializingJson(e.to_string()))
+                            .await
+                            .ok();
+                    }
+                }
+                // tell writer
+            }
+            _ => {}
+        }
+    }
 
     println!("stream closed none received");
 }
