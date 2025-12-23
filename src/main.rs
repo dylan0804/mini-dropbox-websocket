@@ -54,9 +54,9 @@ async fn main() -> Result<()> {
         .with_state(AppState::new());
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let port = env::var("PORT").unwrap_or_else(|_| "3001".to_string());
     let addr = format!("{}:{}", host, port);
-    
+
     let listener = TcpListener::bind(&addr).await.unwrap();
 
     println!("server running at {:?}", listener.local_addr());
