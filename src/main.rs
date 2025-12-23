@@ -98,6 +98,7 @@ async fn write(
     mut rx: Receiver<WebSocketMessage>,
     state: AppState,
 ) {
+    println!("write called");
     loop {
         while let Ok(msg) = rx.try_recv() {
             match msg {
@@ -119,10 +120,13 @@ async fn write(
 }
 
 async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>, state: AppState) {
+    println!("read called");
     while let Some(Ok(msg)) = receiver.next().await {
+        println!("receiving smth, deserializing it...");
         match msg {
             Message::Text(bytes) => {
                 match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
+                    println!("got text, figuring out the category");
                     Ok(websocket_msg) => match websocket_msg {
                         WebSocketMessage::Register { nickname } => {
                             state.users_list.insert(nickname, None);
