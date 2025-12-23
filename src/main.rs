@@ -121,6 +121,9 @@ async fn write(
 
 async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>, state: AppState) {
     println!("read called");
+    if let None = receiver.next().await {
+        println!("none");
+    }
     while let Some(ok_result) = receiver.next().await {
         println!("receiving smth, deserializing it...");
         match ok_result {
