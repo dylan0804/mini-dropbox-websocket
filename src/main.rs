@@ -78,7 +78,10 @@ async fn ws_handler(
 ) -> impl IntoResponse {
     println!("{addr} connected");
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, addr))
+    ws.on_failed_upgrade(|e| {
+        println!("error upgrading ws: {:?}", e);
+    })
+    .on_upgrade(move |socket| handle_socket(socket, state, addr))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, who: SocketAddr) {
