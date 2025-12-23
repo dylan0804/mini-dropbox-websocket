@@ -126,7 +126,6 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
         match msg {
             Message::Text(bytes) => {
                 match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
-                    println!("got text, figuring out the category");
                     Ok(websocket_msg) => match websocket_msg {
                         WebSocketMessage::Register { nickname } => {
                             state.users_list.insert(nickname, None);
