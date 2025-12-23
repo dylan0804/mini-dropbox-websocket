@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr};
 
 use anyhow::Result;
 use axum::{
@@ -42,7 +42,7 @@ impl AppState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct IrohCredentials {
     endpoint: Endpoint,
 }
@@ -53,7 +53,11 @@ async fn main() -> Result<()> {
         .route("/ws", any(ws_handler))
         .with_state(AppState::new());
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr = format!("{}:{}", host, port);
+    
+    let listener = TcpListener::bind(&addr).await.unwrap();
 
     println!("server running at {:?}", listener.local_addr());
 
@@ -119,7 +123,12 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                     Ok(websocket_msg) => match websocket_msg {
                         WebSocketMessage::Register { nickname } => {
                             state.users_list.insert(nickname, None);
+                            println!("Users now {:?}", state.users_list);
                             tx.send(WebSocketMessage::RegisterSuccess).await.ok();
+                        }
+                        WebSocketMessage::DisconnectUser(nickname) => {
+                            state.users_list.remove(&nickname);
+                            println!("Users now {:?}", state.users_list);
                         }
                         _ => {}
                     },
