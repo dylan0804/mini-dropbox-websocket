@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use axum::{
@@ -11,10 +11,8 @@ use axum::{
     Json, Router,
 };
 use axum_extra::{headers::UserAgent, TypedHeader};
-use dashmap::{DashMap, Map};
+use dashmap::DashMap;
 use futures_util::{
-    future::ok,
-    io::Write,
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
@@ -31,13 +29,13 @@ mod message;
 
 #[derive(Clone)]
 struct AppState {
-    users_list: DashMap<String, Option<IrohCredentials>>,
+    users_list: Arc<DashMap<String, Option<IrohCredentials>>>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
-            users_list: DashMap::new(),
+            users_list: Arc::new(DashMap::new()),
         }
     }
 }
@@ -89,15 +87,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, who: SocketAddr) {
 
     let (tx, rx) = mpsc::channel::<WebSocketMessage>(100);
 
-    tokio::spawn(write(sender, rx, state.clone()));
+    tokio::spawn(write(sender, rx));
     tokio::spawn(read(receiver, tx, state));
 }
 
-async fn write(
-    mut sender: SplitSink<WebSocket, Message>,
-    mut rx: Receiver<WebSocketMessage>,
-    state: AppState,
-) {
+async fn write(mut sender: SplitSink<WebSocket, Message>, mut rx: Receiver<WebSocketMessage>) {
     while let Some(msg) = rx.recv().await {
         match msg {
             WebSocketMessage::RegisterSuccess => {
