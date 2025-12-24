@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum WebSocketMessage {
     Register { nickname: String },
     DisconnectUser(String),
+    Test(String),
 
     RegisterSuccess,
 

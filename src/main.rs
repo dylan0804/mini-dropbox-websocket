@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr};
+use std::{any::Any, env, net::SocketAddr};
 
 use anyhow::Result;
 use axum::{
@@ -98,7 +98,6 @@ async fn write(
     mut rx: Receiver<WebSocketMessage>,
     state: AppState,
 ) {
-    println!("write called");
     while let Some(msg) = rx.recv().await {
         match msg {
             WebSocketMessage::RegisterSuccess => {
@@ -112,18 +111,16 @@ async fn write(
             WebSocketMessage::ErrorDeserializingJson(e) => {
                 sender.send(Message::Text(Utf8Bytes::from(e))).await.ok();
             }
+            WebSocketMessage::Test(a) => {
+                sender.send(Message::Text(Utf8Bytes::from(a))).await.ok();
+            }
             _ => {}
         }
     }
 }
 
 async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>, state: AppState) {
-    println!("read called");
-
-    // let first = receiver.next().await;
-    // println!("got {first:?}");
     while let Some(Ok(msg)) = receiver.next().await {
-        println!("receiving smth, deserializing it...");
         match msg {
             Message::Text(bytes) => {
                 match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
@@ -136,6 +133,9 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                         WebSocketMessage::DisconnectUser(nickname) => {
                             state.users_list.remove(&nickname);
                             println!("Users now {:?}", state.users_list);
+                        }
+                        WebSocketMessage::Test(a) => {
+                            tx.send(WebSocketMessage::Test(a)).await.ok();
                         }
                         _ => {}
                     },
