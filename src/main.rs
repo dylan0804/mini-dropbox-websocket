@@ -109,10 +109,20 @@ async fn write(
                     .ok();
             }
             WebSocketMessage::ErrorDeserializingJson(e) => {
-                sender.send(Message::Text(Utf8Bytes::from(e))).await.ok();
+                sender
+                    .send(Message::Text(Utf8Bytes::from(
+                        json!(WebSocketMessage::ErrorDeserializingJson(e)).to_string(),
+                    )))
+                    .await
+                    .ok();
             }
             WebSocketMessage::Test(a) => {
-                sender.send(Message::Text(Utf8Bytes::from(a))).await.ok();
+                sender
+                    .send(Message::Text(Utf8Bytes::from(
+                        json!(WebSocketMessage::Test("haha".into())).to_string(),
+                    )))
+                    .await
+                    .ok();
             }
             _ => {}
         }
@@ -135,6 +145,7 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                             println!("Users now {:?}", state.users_list);
                         }
                         WebSocketMessage::Test(a) => {
+                            println!("got {a}");
                             tx.send(WebSocketMessage::Test(a)).await.ok();
                         }
                         _ => {}
