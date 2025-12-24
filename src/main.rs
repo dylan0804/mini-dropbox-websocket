@@ -1,4 +1,4 @@
-use std::{any::Any, env, net::SocketAddr};
+use std::{any::Any, env, net::SocketAddr, os::macos::raw::stat};
 
 use anyhow::Result;
 use axum::{
@@ -108,18 +108,18 @@ async fn write(
                     .await
                     .ok();
             }
-            WebSocketMessage::ErrorDeserializingJson(e) => {
+            WebSocketMessage::ActiveUsersList(active_users_list) => {
                 sender
                     .send(Message::Text(Utf8Bytes::from(
-                        json!(WebSocketMessage::ErrorDeserializingJson(e)).to_string(),
+                        json!(WebSocketMessage::ActiveUsersList(active_users_list)).to_string(),
                     )))
                     .await
                     .ok();
             }
-            WebSocketMessage::Test(a) => {
+            WebSocketMessage::ErrorDeserializingJson(e) => {
                 sender
                     .send(Message::Text(Utf8Bytes::from(
-                        json!(WebSocketMessage::Test("haha".into())).to_string(),
+                        json!(WebSocketMessage::ErrorDeserializingJson(e)).to_string(),
                     )))
                     .await
                     .ok();
@@ -144,9 +144,17 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                             state.users_list.remove(&nickname);
                             println!("Users now {:?}", state.users_list);
                         }
-                        WebSocketMessage::Test(a) => {
-                            println!("got {a}");
-                            tx.send(WebSocketMessage::Test(a)).await.ok();
+                        WebSocketMessage::GetActiveUsersList(except) => {
+                            let active_users_list = state
+                                .users_list
+                                .iter()
+                                .filter(|ref_multi| &except != ref_multi.key())
+                                .map(|ref_multi| ref_multi.key().clone())
+                                .collect::<Vec<String>>();
+
+                            tx.send(WebSocketMessage::ActiveUsersList(active_users_list))
+                                .await
+                                .ok();
                         }
                         _ => {}
                     },

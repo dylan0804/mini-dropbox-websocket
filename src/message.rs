@@ -5,9 +5,11 @@ use serde::{Deserialize, Serialize};
 pub enum WebSocketMessage {
     Register { nickname: String },
     DisconnectUser(String),
-    Test(String),
 
     RegisterSuccess,
+
+    GetActiveUsersList(String),
+    ActiveUsersList(Vec<String>),
 
     ErrorDeserializingJson(String),
 }
