@@ -94,7 +94,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, who: SocketAddr) {
     let (sender, receiver) = socket.split();
     let (tx, rx) = mpsc::channel::<WebSocketMessage>(100);
 
-    let _ = state.tx.subscribe();
+    let broadcast_rx = state.tx.subscribe();
     println!("number of subscribers {}", state.tx.receiver_count());
     tokio::spawn(write(sender, rx));
     tokio::spawn(read(receiver, tx, state));
