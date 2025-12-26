@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -10,6 +12,9 @@ pub enum WebSocketMessage {
 
     GetActiveUsersList(String),
     ActiveUsersList(Vec<String>),
+
+    PrepareFile(PathBuf),
+    SendFile(String),
 
     ErrorDeserializingJson(String),
 }
