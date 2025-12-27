@@ -15,5 +15,3 @@ futures-util = { version = "0.3.31", default-features = false, features = [
   "sink",
   "std",
 ] }
-iroh = "0.95.1"
-iroh-blobs = "0.97.0"

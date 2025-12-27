@@ -1,4 +1,4 @@
-use std::{env, fs::File, net::SocketAddr, sync::Arc};
+use std::{env, fs::File, net::SocketAddr, os::macos::raw::stat, sync::Arc};
 
 use anyhow::Result;
 use axum::{
@@ -16,15 +16,9 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use iroh::Endpoint;
-use serde::ser;
-use serde_json::json;
 use tokio::{
     net::TcpListener,
-    sync::{
-        broadcast::{self},
-        mpsc::{self, Receiver, Sender},
-    },
+    sync::mpsc::{self, Receiver, Sender},
 };
 
 use crate::message::WebSocketMessage;
@@ -33,24 +27,15 @@ mod message;
 
 #[derive(Clone)]
 struct AppState {
-    tx: tokio::sync::broadcast::Sender<String>,
-    users_list: Arc<DashMap<String, Option<IrohCredentials>>>,
+    users_list: Arc<DashMap<String, Sender<WebSocketMessage>>>,
 }
 
 impl AppState {
     fn new() -> Self {
-        let (tx, _) = broadcast::channel::<String>(100);
-
         Self {
             users_list: Arc::new(DashMap::new()),
-            tx,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-struct IrohCredentials {
-    endpoint: Endpoint,
 }
 
 #[tokio::main]
@@ -94,8 +79,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, who: SocketAddr) {
     let (sender, receiver) = socket.split();
     let (tx, rx) = mpsc::channel::<WebSocketMessage>(100);
 
-    let broadcast_rx = state.tx.subscribe();
-    println!("number of subscribers {}", state.tx.receiver_count());
     tokio::spawn(write(sender, rx));
     tokio::spawn(read(receiver, tx, state));
 }
@@ -106,9 +89,7 @@ async fn write(mut sender: SplitSink<WebSocket, Message>, mut rx: Receiver<WebSo
             WebSocketMessage::RegisterSuccess => {
                 sender
                     .send(Message::Text(
-                        serde_json::to_string(&WebSocketMessage::RegisterSuccess)
-                            .unwrap()
-                            .into(),
+                        WebSocketMessage::RegisterSuccess.to_json().into(),
                     ))
                     .await
                     .ok();
@@ -116,22 +97,34 @@ async fn write(mut sender: SplitSink<WebSocket, Message>, mut rx: Receiver<WebSo
             WebSocketMessage::ActiveUsersList(active_users_list) => {
                 sender
                     .send(Message::Text(
-                        serde_json::to_string(&WebSocketMessage::ActiveUsersList(
-                            active_users_list,
-                        ))
-                        .unwrap()
-                        .into(),
+                        WebSocketMessage::ActiveUsersList(active_users_list)
+                            .to_json()
+                            .into(),
                     ))
                     .await
                     .ok();
             }
+            WebSocketMessage::ReceiveFile(ticket) => {
+                sender
+                    .send(Message::Text(
+                        WebSocketMessage::ReceiveFile(ticket).to_json().into(),
+                    ))
+                    .await
+                    .ok();
+            }
+
+            // errors
             WebSocketMessage::ErrorDeserializingJson(e) => {
                 sender
                     .send(Message::Text(
-                        serde_json::to_string(&WebSocketMessage::ErrorDeserializingJson(e))
-                            .unwrap()
-                            .into(),
+                        WebSocketMessage::ErrorDeserializingJson(e).to_json().into(),
                     ))
+                    .await
+                    .ok();
+            }
+            WebSocketMessage::UserNotFound => {
+                sender
+                    .send(WebSocketMessage::UserNotFound.to_json().into())
                     .await
                     .ok();
             }
@@ -147,11 +140,13 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                 match serde_json::from_str::<WebSocketMessage>(bytes.as_str()) {
                     Ok(websocket_msg) => match websocket_msg {
                         WebSocketMessage::Register { nickname } => {
-                            state.users_list.insert(nickname, None);
+                            state.users_list.insert(nickname, tx.clone());
                             tx.send(WebSocketMessage::RegisterSuccess).await.ok();
+                            println!("users now {:?}", state.users_list);
                         }
                         WebSocketMessage::DisconnectUser(nickname) => {
                             state.users_list.remove(&nickname);
+                            print!("{nickname} removed");
                         }
                         WebSocketMessage::GetActiveUsersList(except) => {
                             let active_users_list = state
@@ -165,8 +160,16 @@ async fn read(mut receiver: SplitStream<WebSocket>, tx: Sender<WebSocketMessage>
                                 .await
                                 .ok();
                         }
-                        WebSocketMessage::SendFile(ticket) => {
-                            println!("ticket is {ticket}");
+                        WebSocketMessage::SendFile { recipient, ticket } => {
+                            if let Some(maybe) = state.users_list.get(&recipient) {
+                                let recipient_rx = maybe.value().clone();
+                                recipient_rx
+                                    .send(WebSocketMessage::ReceiveFile(ticket))
+                                    .await
+                                    .ok();
+                            } else {
+                                tx.send(WebSocketMessage::UserNotFound).await.ok();
+                            }
                         }
                         _ => {}
                     },
