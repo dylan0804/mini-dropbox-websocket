@@ -1,4 +1,4 @@
-use std::{env, fs::File, net::SocketAddr, os::macos::raw::stat, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use axum::{
